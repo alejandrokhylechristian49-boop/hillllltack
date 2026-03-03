@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dashboard - Hiltac Machine Downtime Monitoring</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #d0d0d0;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        .loading-screen {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(8px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            opacity: 1;
+            transition: opacity 0.3s ease-out;
+        }
+        .loading-screen.hidden { opacity: 0; pointer-events: none; }
+        .loading-content {
+            background: white; border-radius: 20px; padding: 50px 60px;
+            text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            max-width: 450px; width: 90%; animation: slideUp 0.5s ease;
+        }
+        @keyframes slideUp { from{transform:translateY(50px);opacity:0} to{transform:translateY(0);opacity:1} }
+        .loading-spinner-container { width:120px; height:120px; margin:0 auto 30px; position:relative; }
+        .loading-spinner-circle {
+            width:120px; height:120px; border-radius:50%;
+            background:linear-gradient(135deg,#8B0000 0%,#DC143C 100%);
+            display:flex; align-items:center; justify-content:center;
+            box-shadow:0 10px 30px rgba(139,0,0,0.4); animation:scaleIn 0.5s ease;
+        }
+        @keyframes scaleIn { from{transform:scale(0)} to{transform:scale(1)} }
+        .loading-spinner {
+            width:60px; height:60px;
+            border:4px solid rgba(255,255,255,0.3); border-top:4px solid white;
+            border-radius:50%; animation:spin 1s linear infinite;
+        }
+        @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+        .loading-text { font-size:32px; font-weight:700; color:#8B0000; margin-bottom:15px; }
+        .loading-message { font-size:16px; color:#666; line-height:1.6; }
+
+        .sidebar {
+            width:320px; background:linear-gradient(180deg,#e8e8e8 0%,#d5d5d5 100%);
+            box-shadow:3px 0 15px rgba(0,0,0,0.15); position:fixed; height:100vh; overflow-y:auto; z-index:100;
+        }
+        .logo-section { padding:30px 25px; background:white; border-bottom:3px solid #e0e0e0; }
+        .logo-container { display:flex; align-items:center; gap:15px; }
+        .logo-img { width:70px; height:70px; display:flex; align-items:center; justify-content:center; }
+        .logo-img img { width:100%; height:100%; object-fit:contain; }
+        .company-info { flex:1; }
+        .company-name { font-size:22px; font-weight:700; color:#8B0000; line-height:1.2; margin-bottom:2px; }
+        .company-subtitle { font-size:11px; color:#8B0000; font-weight:600; }
+        .menu-section { padding:25px 0; }
+        .menu-title { padding:0 25px 12px; font-size:12px; font-weight:700; color:#666; text-transform:uppercase; letter-spacing:1px; }
+        .menu-item { padding:14px 25px; cursor:pointer; transition:all 0.3s; color:#333; font-weight:500; font-size:15px; margin:0 15px 5px 15px; border-radius:8px; }
+        .menu-item:hover { background:rgba(139,0,0,0.1); }
+        .menu-item.active { background:#8B0000; color:white; font-weight:600; box-shadow:0 3px 8px rgba(139,0,0,0.3); }
+
+        .main-content { margin-left:320px; flex:1; min-height:100vh; background:#d0d0d0; }
+
+        .header {
+            background:#d0d0d0; color:#8B0000; padding:25px 40px;
+            display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #c0c0c0;
+        }
+        .header-title h1 { font-size:28px; margin-bottom:3px; font-weight:700; color:#8B0000; }
+        .header-title p { font-size:15px; color:#333; font-weight:500; }
+        .header-right { display:flex; align-items:center; gap:20px; }
+        .search-box { position:relative; width:300px; }
+        .search-box input { width:100%; padding:10px 40px 10px 15px; border:2px solid #999; border-radius:25px; font-size:14px; background:white; }
+        .search-box input:focus { outline:none; border-color:#8B0000; }
+        .search-icon { position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:20px; color:#666; cursor:pointer; }
+        .header-icons { display:flex; gap:15px; }
+        .icon-btn { width:45px; height:45px; background:white; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all 0.3s; font-size:22px; border:2px solid #e0e0e0; }
+        .icon-btn:hover { background:#f5f5f5; transform:translateY(-2px); box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+        .user-avatar { width:45px; height:45px; background:white; color:white; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; cursor:pointer; transition:all 0.3s; overflow:hidden; }
+        .user-avatar img { width:100%; height:100%; object-fit:cover; }
+        .user-avatar:hover { transform:scale(1.05); box-shadow:0 2px 8px rgba(0,0,0,0.2); }
+
+        .container { max-width:1600px; margin:0 auto; padding:30px 40px; }
+
+        .stats-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; margin-bottom:25px; }
+        .stat-card { background:white; padding:30px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.15); transition:all 0.3s; }
+        .stat-card:hover { transform:translateY(-3px); box-shadow:0 6px 20px rgba(0,0,0,0.2); }
+        .stat-card.downtime { background:linear-gradient(135deg,#8B0000 0%,#A52A2A 100%); color:white; }
+        .stat-label { font-size:16px; margin-bottom:12px; font-weight:600; opacity:0.95; }
+        .stat-value { font-size:60px; font-weight:700; font-family:'Arial',sans-serif; }
+        .stat-card:not(.downtime) .stat-value { color:#000; }
+        .stat-card.probability .stat-value { color:#8B0000; }
+
+        .section-header { font-size:18px; font-weight:700; color:#000; margin-bottom:20px; text-transform:uppercase; letter-spacing:0.5px; }
+
+        .main-grid { display:grid; grid-template-columns:380px 1fr; grid-template-rows:auto 1fr; gap:20px; margin-bottom:25px; }
+        .reliability-card { grid-row:1 / -1; grid-column:1; }
+        .top-right { grid-row:1; grid-column:2; display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+        .bottom-right { grid-row:2; grid-column:2; }
+        .bottom-right .chart-card { display:flex; flex-direction:column; }
+
+        .status-card { background:white; padding:25px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.15); }
+        .card-title { font-size:18px; font-weight:700; color:#000; margin-bottom:15px; text-transform:uppercase; text-align:center; }
+
+        .status-indicator-large { width:20px; height:20px; border-radius:50%; display:inline-block; margin-right:10px; }
+        .status-indicator-large.running { background:#27ae60; box-shadow:0 0 12px rgba(39,174,96,0.6); }
+        .status-indicator-large.stopped { background:#DC143C; box-shadow:0 0 12px rgba(220,20,60,0.6); }
+
+        .status-text-large { font-size:36px; font-weight:700; margin:15px 0; display:flex; align-items:center; justify-content:center; }
+        .status-text-large.running { color:#27ae60; }
+        .status-text-large.stopped { color:#DC143C; }
+
+        .status-time-large { font-size:32px; color:#333; font-family:'Arial',sans-serif; margin:15px 0; text-align:center; font-weight:600; }
+
+        .next-pm { text-align:center; color:#666; font-size:14px; margin-top:15px; }
+        .next-pm strong { color:#000; }
+
+        .probability-section { margin-top:25px; padding-top:25px; border-top:2px solid #e0e0e0; }
+        .probability-title { font-size:16px; font-weight:700; color:#000; margin-bottom:15px; text-transform:uppercase; }
+        .probability-item { display:flex; justify-content:space-between; padding:10px 0; font-size:15px; border-bottom:1px solid #f0f0f0; }
+        .probability-item:last-child { border-bottom:none; }
+        .probability-item .label { color:#333; font-weight:500; }
+        .probability-item .value { font-weight:700; }
+        .probability-item .value.high { color:#27ae60; }
+        .probability-item .value.medium { color:#f39c12; }
+        .probability-item .value.low { color:#DC143C; }
+
+        /* Mini bar inside probability section */
+        .prob-bar-wrap { flex:1; margin:0 12px; height:7px; background:#eee; border-radius:4px; overflow:hidden; align-self:center; }
+        .prob-bar { height:100%; border-radius:4px; transition:width 0.8s ease; }
+        .prob-bar.green  { background:#27ae60; }
+        .prob-bar.orange { background:#f39c12; }
+        .prob-bar.red    { background:#DC143C; }
+
+        .machine-id { text-align:center; margin:25px 0; }
+        .machine-id-text { font-size:48px; font-weight:700; color:#000; font-family:'Arial',sans-serif; }
+
+        .btn-log { width:100%; padding:14px; background:#e0e0e0; color:#999; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; transition:all 0.3s; }
+        .btn-log:hover:not(:disabled) { background:#d0d0d0; }
+        .btn-log.active-btn { background:#8B0000; color:white; }
+        .btn-log.active-btn:hover { background:#A52A2A; }
+        .btn-log:disabled { opacity:0.5; cursor:not-allowed; }
+
+        .maintenance-card { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:15px 0; }
+        .maintenance-row { display:flex; align-items:center; justify-content:center; gap:18px; }
+        .maintenance-icon { font-size:56px; }
+        .maintenance-count { font-size:100px; font-weight:700; color:#DC143C; font-family:'Arial',sans-serif; line-height:1; }
+        .maintenance-label { font-size:10px; color:#666; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; margin-top:10px; }
+
+        .chart-container-small { position:relative; width:100%; height:180px; margin-top:5px; }
+        .chart-card { background:white; padding:30px; border-radius:20px; box-shadow:0 4px 15px rgba(0,0,0,0.15); }
+        .chart-container-trend { position:relative; flex:1; min-height:280px; }
+
+        .insights-section { margin-top:20px; padding-top:20px; border-top:2px solid #e0e0e0; }
+        .insights-title { font-size:16px; font-weight:700; color:#000; margin-bottom:15px; text-transform:uppercase; }
+        .insight-item { display:flex; justify-content:space-between; padding:8px 0; font-size:14px; }
+        .insight-item .label { color:#666; font-weight:500; }
+        .insight-item .value { color:#000; font-weight:600; }
+        .insight-item .value.improving { color:#27ae60; }
+        .insight-item .value.worsening { color:#DC143C; }
+
+        .message { padding:12px 20px; border-radius:8px; margin-bottom:20px; display:none; font-size:14px; }
+        .error   { background:#fee; color:#c33; border-left:4px solid #c33; }
+        .success { background:#efe; color:#2d7a3e; border-left:4px solid #27ae60; }
+
+        .modal-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:200; justify-content:center; align-items:center; }
+        .modal-overlay.active { display:flex; }
+        .modal-content { background:white; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,0.2); max-width:600px; width:90%; max-height:90vh; overflow-y:auto; animation:slideUp 0.3s ease-out; }
+        .modal-header { padding:30px; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:center; }
+        .modal-header h2 { font-size:24px; color:#333; }
+        .modal-close { background:none; border:none; font-size:28px; cursor:pointer; color:#999; transition:color 0.3s; }
+        .modal-close:hover { color:#333; }
+        .modal-body { padding:30px; }
+
+        .timer-display { background:linear-gradient(135deg,#8B0000 0%,#DC143C 100%); color:white; padding:30px; border-radius:12px; text-align:center; margin-bottom:30px; }
+        .timer-label { font-size:14px; opacity:0.9; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px; }
+        .timer-value { font-size:48px; font-weight:700; font-family:'Arial',sans-serif; }
+
+        .info-display { background:#f8f9fa; padding:20px; border-radius:8px; margin-bottom:25px; display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:15px; }
+        .info-item { text-align:center; }
+        .info-label { font-size:12px; color:#666; margin-bottom:5px; text-transform:uppercase; font-weight:600; }
+        .info-value { font-size:16px; color:#333; font-weight:600; }
+
+        .form-group { margin-bottom:20px; }
+        label { display:block; margin-bottom:8px; color:#333; font-weight:600; font-size:14px; }
+        .required { color:#DC143C; }
+        input[type="text"], textarea { width:100%; padding:12px; border:2px solid #e0e0e0; border-radius:8px; font-size:14px; transition:border-color 0.3s; font-family:inherit; background:#f8f9fa; }
+        textarea:focus, input:focus { outline:none; border-color:#8B0000; background:white; }
+        textarea { min-height:80px; resize:vertical; }
+
+        .checkbox-group { background:#f8f9fa; padding:15px; border-radius:8px; margin-bottom:15px; }
+        .checkbox-item { margin-bottom:10px; }
+        .checkbox-item label { display:flex; align-items:center; font-weight:500; cursor:pointer; margin-bottom:0; }
+        input[type="checkbox"] { width:18px; height:18px; margin-right:10px; cursor:pointer; }
+
+        .modal-footer { padding:20px 30px; border-top:1px solid #e0e0e0; display:flex; gap:10px; justify-content:flex-end; }
+        .btn-modal-submit { padding:12px 30px; background:linear-gradient(135deg,#27ae60 0%,#229954 100%); color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer; transition:all 0.3s; }
+        .btn-modal-submit:hover { transform:translateY(-2px); box-shadow:0 4px 12px rgba(39,174,96,0.3); }
+        .btn-modal-submit:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+        .btn-modal-cancel { padding:12px 30px; background:#e9ecef; color:#333; border:none; border-radius:8px; font-weight:600; cursor:pointer; transition:all 0.3s; }
+        .btn-modal-cancel:hover { background:#dee2e6; }
+
+        .message-modal { padding:12px 20px; border-radius:8px; margin-bottom:15px; display:none; font-size:14px; }
+
+        .logout-modal { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:300; justify-content:center; align-items:center; }
+        .logout-modal.active { display:flex; }
+        .logout-modal-content { background:white; border-radius:20px; box-shadow:0 20px 60px rgba(0,0,0,0.3); max-width:440px; width:90%; overflow:hidden; animation:slideUp 0.3s ease-out; }
+        .logout-modal-header { background:linear-gradient(135deg,#8B0000 0%,#DC143C 100%); padding:30px; text-align:center; }
+        .logout-icon { font-size:56px; margin-bottom:15px; }
+        .logout-modal-header h2 { font-size:24px; color:white; font-weight:600; margin:0; }
+        .logout-modal-body { padding:35px 30px; text-align:center; }
+        .logout-modal-body p { font-size:16px; color:#555; line-height:1.6; margin:0 0 10px 0; }
+        .logout-user-info { background:#f8f9fa; padding:15px; border-radius:12px; margin-top:20px; display:flex; align-items:center; justify-content:center; gap:12px; }
+        .logout-user-avatar { width:45px; height:45px; border-radius:50%; overflow:hidden; border:2px solid #8B0000; }
+        .logout-user-avatar img { width:100%; height:100%; object-fit:cover; }
+        .logout-user-details { text-align:left; }
+        .logout-user-name { font-size:15px; font-weight:700; color:#333; margin-bottom:2px; }
+        .logout-user-role { font-size:12px; color:#666; }
+        .logout-modal-footer { padding:20px 30px 30px; display:flex; gap:12px; justify-content:center; }
+        .btn-logout-confirm { padding:14px 35px; background:linear-gradient(135deg,#DC143C 0%,#8B0000 100%); color:white; border:none; border-radius:12px; font-weight:600; font-size:15px; cursor:pointer; transition:all 0.3s; box-shadow:0 4px 15px rgba(220,20,60,0.3); }
+        .btn-logout-confirm:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(220,20,60,0.4); }
+        .btn-logout-cancel { padding:14px 35px; background:white; color:#333; border:2px solid #e0e0e0; border-radius:12px; font-weight:600; font-size:15px; cursor:pointer; transition:all 0.3s; }
+        .btn-logout-cancel:hover { background:#f8f9fa; border-color:#c0c0c0; }
+
+        @media(max-width:1400px) {
+            .main-grid { grid-template-columns:1fr; grid-template-rows:auto auto auto; }
+            .reliability-card,.top-right,.bottom-right { grid-row:auto; grid-column:auto; }
+        }
+        @media(max-width:768px) {
+            .sidebar { width:0; transform:translateX(-100%); }
+            .main-content { margin-left:0; }
+            .container { padding:15px; }
+            .header { padding:15px 20px; flex-direction:column; gap:15px; align-items:flex-start; }
+            .header-title h1 { font-size:20px; }
+            .header-right { width:100%; justify-content:space-between; }
+            .search-box { flex:1; max-width:none; }
+            .stats-grid { grid-template-columns:1fr; gap:15px; }
+            .stat-value { font-size:42px; }
+            .top-right { grid-template-columns:1fr; }
+            .chart-container-trend { min-height:220px; }
+            .modal-footer { flex-direction:column; }
+            .btn-modal-submit,.btn-modal-cancel { width:100%; padding:12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="loading-screen" id="loadingScreen">
+    <div class="loading-content">
+        <div class="loading-spinner-container">
+            <div class="loading-spinner-circle"><div class="loading-spinner"></div></div>
+        </div>
+        <h2 class="loading-text">Loading Dashboard...</h2>
+        <p class="loading-message">Please wait while we prepare your workspace</p>
+    </div>
+</div>
+
+<div class="sidebar">
+    <div class="logo-section">
+        <div class="logo-container">
+            <div class="logo-img"><img src="hiltac_logo.png" alt="Hiltac Logo"></div>
+            <div class="company-info">
+                <div class="company-name">HILTAC</div>
+                <div class="company-subtitle">Manufacturing and Trading, Inc.</div>
+            </div>
+        </div>
+    </div>
+    <div class="menu-section">
+        <div class="menu-title">MENU</div>
+        <div class="menu-item active">Dashboard</div>
+        <div class="menu-item" onclick="navigateWithLoading('records.html')">Downtime Record</div>
+        <div class="menu-item" onclick="navigateWithLoading('maintenance.html')">Maintenance Scheduler</div>
+        <div class="menu-item">Analytics</div>
+        <div class="menu-item" onclick="navigateWithLoading('reports.html')">Reports</div>
+        <div class="menu-item" onclick="navigateWithLoading('user-management.html')">User Management</div>
+    </div>
+    <div class="menu-section">
+        <div class="menu-title">TOOLS</div>
+        <div class="menu-item" onclick="navigateWithLoading('settings.html')">Settings</div>
+        <div class="menu-item" onclick="navigateWithLoading('feedback.html')">Feedback</div>
+        <div class="menu-item">Help</div>
+    </div>
+</div>
+
+<div class="main-content">
+    <div class="header">
+        <div class="header-title">
+            <h1>Machine Downtime Monitoring System</h1>
+            <p id="currentDate"></p>
+        </div>
+        <div class="header-right">
+            <div class="search-box">
+                <input type="text" placeholder="Search...">
+                <span class="search-icon">🔍</span>
+            </div>
+            <div class="header-icons">
+                <div class="icon-btn" title="Notifications">🔔</div>
+            </div>
+            <div class="user-avatar" onclick="logout()" title="Logout">
+                <img src="profile_logo.png" alt="Profile" id="userProfile">
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="message" class="message"></div>
+
+        <!-- Top Stats -->
+        <div class="stats-grid">
+            <div class="stat-card downtime">
+                <div class="stat-label">Total Downtime Today</div>
+                <div class="stat-value" id="totalDowntime">0:00:00</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Active Machines</div>
+                <div class="stat-value" id="activeMachines">1/1</div>
+            </div>
+            <div class="stat-card probability">
+                <div class="stat-label">Breakdown Probability</div>
+                <div class="stat-value" id="topBreakdownPct">—</div>
+            </div>
+        </div>
+
+        <div class="section-header">Machine Status Overview</div>
+
+        <div class="main-grid">
+
+            <!-- LEFT: Machine Status & Probability -->
+            <div class="reliability-card status-card">
+                <div class="card-title">MACHINE DOWNTIME PROBABILITY</div>
+
+                <div class="status-text-large running" id="statusText">
+                    <span class="status-indicator-large running" id="statusIndicator"></span>
+                    <span id="statusLabel">RUNNING</span>
+                </div>
+                
+                <div class="probability-section">
+                    <div class="probability-title">Next-Day Forecast (Markov Analysis)</div>
+                    <div class="probability-item">
+                        <span class="label">Running</span>
+                        <div class="prob-bar-wrap"><div class="prob-bar green" id="probBarR" style="width:0%"></div></div>
+                        <span class="value high" id="probValR">—</span>
+                    </div>
+                    <div class="probability-item">
+                        <span class="label">Minor Stop</span>
+                        <div class="prob-bar-wrap"><div class="prob-bar orange" id="probBarMS" style="width:0%"></div></div>
+                        <span class="value medium" id="probValMS">—</span>
+                    </div>
+                    <div class="probability-item">
+                        <span class="label">Breakdown</span>
+                        <div class="prob-bar-wrap"><div class="prob-bar red" id="probBarBD" style="width:0%"></div></div>
+                        <span class="value low" id="probValBD">—</span>
+                    </div>
+                </div>
+
+                <div class="probability-section" style="margin-top:15px;">
+                    <div class="probability-title">7-Day Forecast</div>
+                    <div class="probability-item">
+                        <span class="label">Breakdown Risk</span>
+                        <div class="prob-bar-wrap"><div class="prob-bar red" id="probBar7DayBD" style="width:0%"></div></div>
+                        <span class="value low" id="probVal7DayBD">—</span>
+                    </div>
+                </div>
+
+                <div class="machine-id">
+                    <div class="machine-id-text">JR-01</div>
+                </div>
+
+                <div class="next-pm" id="recommendationSummary">
+                    <strong>Recommendation:</strong> <span id="recommendationText">Analyzing data...</span>
+                </div>
+            </div>
+
+            <!-- TOP-RIGHT: Maintenance Stats | Downtime By Cause -->
+            <div class="top-right">
+                <div class="status-card">
+                    <div class="card-title">MAINTENANCE TODAY</div>
+                    <div class="maintenance-card">
+                        <div class="maintenance-row">
+                            <div class="maintenance-count" id="maintenanceCount">0</div>
+                            <div class="maintenance-icon">⚠️</div>
+                        </div>
+                        <div class="maintenance-label">Completed Tasks</div>
+                    </div>
+                </div>
+
+                <div class="status-card">
+                    <div class="card-title">DOWNTIME BY CAUSE</div>
+                    <div class="chart-container-small">
+                        <canvas id="downtimeChartSmall"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BOTTOM-RIGHT: Downtime Trend | Insights -->
+            <div class="bottom-right">
+                <div class="chart-card">
+                    <div class="card-title">DOWNTIME TREND <span style="font-size:12px;font-weight:400;color:#888;text-transform:none;" id="trendSubLabel">(last 14 days)</span></div>
+                    <div class="chart-container-trend">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                    <div class="insights-section">
+                        <div class="insights-title">INSIGHTS</div>
+                        <div class="insight-item">
+                            <span class="label">Highest:</span>
+                            <span class="value" id="insightHighest">—</span>
+                        </div>
+                        <div class="insight-item">
+                            <span class="label">Average:</span>
+                            <span class="value" id="insightAverage">—</span>
+                        </div>
+                        <div class="insight-item">
+                            <span class="label">Trend:</span>
+                            <span class="value" id="insightTrend">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Logout Modal -->
+<div class="logout-modal" id="logoutModal">
+    <div class="logout-modal-content">
+        <div class="logout-modal-header">
+            <div class="logout-icon">👋</div>
+            <h2>Sign Out</h2>
+        </div>
+        <div class="logout-modal-body">
+            <p>Are you sure you want to sign out of your account?</p>
+            <p style="font-size:14px;color:#888;">You'll need to log in again to access the dashboard.</p>
+            <div class="logout-user-info">
+                <div class="logout-user-avatar"><img src="profile_logo.png" alt="Profile"></div>
+                <div class="logout-user-details">
+                    <div class="logout-user-name" id="logoutUserName">User Name</div>
+                    <div class="logout-user-role" id="logoutUserRole">Operator</div>
+                </div>
+            </div>
+        </div>
+        <div class="logout-modal-footer">
+            <button class="btn-logout-cancel" onclick="closeLogoutModal()">Stay Logged In</button>
+            <button class="btn-logout-confirm" onclick="confirmLogout()">Sign Out</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const SUPABASE_URL = 'https://vbudafrnegmlbntnzdlj.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZidWRhZnJuZWdtbGJudG56ZGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkwNzYzNzMsImV4cCI6MjA4NDY1MjM3M30.p8Tn_s6vjc6sfRxYl_OT86tn6sJR1A5eUUF1xCeDBHM';
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser         = null;
+    let downtimeChartSmall  = null;
+    let trendChart          = null;
+    let cachedCausesData    = null;
+
+    // ══════════════════════════════════════
+    // ── MARKOV HELPERS (from maintenance.html) ──
+    // ══════════════════════════════════════
+    function buildCounts(states) {
+        const idx = { R:0, MS:1, BD:2 };
+        const C   = [[0,0,0],[0,0,0],[0,0,0]];
+        for (let i = 0; i < states.length - 1; i++) {
+            const from = idx[states[i]], to = idx[states[i+1]];
+            if (from !== undefined && to !== undefined) C[from][to]++;
+        }
+        return C;
+    }
+
+    function normalizeCounts(C) {
+        return C.map(row => {
+            const total = row.reduce((a,b) => a+b, 0);
+            if (total === 0) return [1/3, 1/3, 1/3];
+            return row.map(v => v / total);
+        });
+    }
+
+    function matMul(A, B) {
+        const R = [[0,0,0],[0,0,0],[0,0,0]];
+        for (let i=0;i<3;i++) for (let j=0;j<3;j++) for (let k=0;k<3;k++) R[i][j] += A[i][k]*B[k][j];
+        return R;
+    }
+
+    function matPow(M, n) {
+        let result = [[1,0,0],[0,1,0],[0,0,1]], base = M.map(r=>[...r]);
+        while (n>0) {
+            if (n%2===1) result = matMul(result, base);
+            base = matMul(base, base);
+            n = Math.floor(n/2);
+        }
+        return result;
+    }
+
+    function vecMatMul(v, M) {
+        return [0,1,2].map(j => v.reduce((s,vi,i) => s + vi*M[i][j], 0));
+    }
+
+    function getV0(state) {
+        return state==='R' ? [1,0,0] : state==='MS' ? [0,1,0] : [0,0,1];
+    }
+
+    function getRiskLevel(bdPct) {
+        if (bdPct < 5) return 'low';
+        if (bdPct < 15) return 'med';
+        return 'high';
+    }
+
+    function getRecommendation(risk, bdPct, n) {
+        if (risk === 'low')
+            return `✅ Low risk (${bdPct.toFixed(1)}% breakdown in ${n} days). Continue normal operations.`;
+        if (risk === 'med')
+            return `⚠️ Moderate risk (${bdPct.toFixed(1)}% breakdown in ${n} days). Schedule inspection soon.`;
+        return `🚨 High risk (${bdPct.toFixed(1)}% breakdown in ${n} days)! Plan maintenance immediately.`;
+    }
+
+    // ── Load machine states & run Markov (from maintenance.html) ──
+    async function loadMarkovProbabilities() {
+        try {
+            const today = new Date();
+            
+            // Calculate 30 days ago
+            const thirtyDaysAgo = new Date(today);
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
+            
+            const { data, error } = await supabaseClient
+                .from('downtime_records')
+                .select('date, machine_state, created_at')
+                .gte('date', thirtyDaysAgoStr)
+                .lte('date', today.toISOString().split('T')[0])
+                .order('created_at', { ascending: true })
+                .order('date', { ascending: true });
+
+            if (error) throw error;
+
+            if (!data || data.length < 2) {
+                console.log('Need at least 2 machine state records');
+                return;
+            }
+
+            // Filter valid states
+            const validStates = data
+                .filter(r => r.machine_state && ['running', 'minor_stop', 'breakdown'].includes(r.machine_state))
+                .map(r => ({
+                    date: r.date,
+                    state: r.machine_state === 'running' ? 'R' : 
+                           r.machine_state === 'minor_stop' ? 'MS' : 'BD'
+                }));
+
+            if (validStates.length < 2) return;
+
+            // Sort by date
+            validStates.sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            const stateSequence = validStates.map(s => s.state);
+            
+            // Run Markov analysis
+            const C = buildCounts(stateSequence);
+            const P = normalizeCounts(C);
+            
+            // Current state is the most recent state
+            const currentState = stateSequence[stateSequence.length - 1];
+            const v0 = getV0(currentState);
+            
+            // Next day forecast
+            const v1 = vecMatMul(v0, P);
+            
+            // 7-day forecast
+            const N = 7;
+            const PN = matPow(P, N);
+            const vN = vecMatMul(v0, PN);
+
+            // Update UI with results
+            updateProbabilityUI(v1, vN, currentState);
+
+        } catch (err) {
+            console.error('Markov error:', err);
+        }
+    }
+
+    function updateProbabilityUI(v1, vN, currentState) {
+        // Update status display
+        document.getElementById('statusLabel').textContent = 
+            currentState === 'R' ? 'RUNNING' : 
+            currentState === 'MS' ? 'MINOR STOP' : 'BREAKDOWN';
+        
+        document.getElementById('statusIndicator').className = 
+            currentState === 'R' ? 'status-indicator-large running' : 'status-indicator-large stopped';
+        
+        document.getElementById('statusText').className = 
+            currentState === 'R' ? 'status-text-large running' : 'status-text-large stopped';
+
+        // Update probability bars and values
+        document.getElementById('probValR').textContent = (v1[0] * 100).toFixed(1) + '%';
+        document.getElementById('probValMS').textContent = (v1[1] * 100).toFixed(1) + '%';
+        document.getElementById('probValBD').textContent = (v1[2] * 100).toFixed(1) + '%';
+        
+        document.getElementById('probBarR').style.width = Math.min(v1[0]*100, 100) + '%';
+        document.getElementById('probBarMS').style.width = Math.min(v1[1]*100, 100) + '%';
+        document.getElementById('probBarBD').style.width = Math.min(v1[2]*100, 100) + '%';
+
+        // Update 7-day breakdown forecast
+        const bdPct7Day = vN[2] * 100;
+        document.getElementById('probVal7DayBD').textContent = bdPct7Day.toFixed(1) + '%';
+        document.getElementById('probBar7DayBD').style.width = Math.min(bdPct7Day, 100) + '%';
+        
+        // Color coding for 7-day breakdown probability
+        const prob7DayEl = document.getElementById('probVal7DayBD');
+        if (bdPct7Day < 5) prob7DayEl.className = 'value low';
+        else if (bdPct7Day < 15) prob7DayEl.className = 'value medium';
+        else prob7DayEl.className = 'value high';
+
+        // Top stat card — breakdown probability (next day)
+        document.getElementById('topBreakdownPct').textContent = (v1[2] * 100).toFixed(1) + '%';
+
+        // Update recommendation
+        const risk = getRiskLevel(bdPct7Day);
+        const rec = getRecommendation(risk, bdPct7Day, 7);
+        document.getElementById('recommendationText').textContent = rec;
+    }
+
+    // ══════════════════════════════════════
+    // ── STATS (from dashboard) ──
+    // ══════════════════════════════════════
+    function getLocalDateString() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    async function loadTodayStats() {
+        try {
+            const localDate = getLocalDateString();
+
+            const { data, error } = await supabaseClient
+                .from('downtime_records')
+                .select('duration_seconds, duration_minutes')
+                .eq('date', localDate)
+                .not('downtime_end', 'is', null);
+
+            if (error) throw error;
+            
+            const totalSec = data.reduce((sum,r) => sum + (r.duration_seconds || (r.duration_minutes||0)*60), 0);
+            const h = Math.floor(totalSec/3600), m = Math.floor((totalSec%3600)/60), s = totalSec%60;
+            document.getElementById('totalDowntime').textContent = `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        } catch(err) { console.error(err); }
+    }
+
+    async function loadRecentRecords() {
+        try {
+            const localDate = getLocalDateString();
+
+            const { data, error } = await supabaseClient
+                .from('downtime_records')
+                .select('*')
+                .eq('date', localDate);
+
+            if (error) throw error;
+            document.getElementById('maintenanceCount').textContent = (data||[]).filter(r => r.downtime_end).length;
+        } catch(err) { console.error(err); }
+    }
+
+    // ══════════════════════════════════════
+    // ── DOWNTIME CAUSES CHART ──
+    // ══════════════════════════════════════
+    async function loadDowntimeCauses() {
+        try {
+            const { data, error } = await supabaseClient
+                .from('downtime_records')
+                .select('*')
+                .not('downtime_end','is',null);
+
+            if (error) throw error;
+
+            const causes = { 
+                'Chain Breakage':0,
+                'Fibers Sticking':0,
+                'Roll Marker Jamming':0,
+                'Machine Malfunction':0,
+                'Others':0 
+            };
+            
+            (data||[]).forEach(r => {
+                if (r.reason_fibers_sticking)     causes['Fibers Sticking']++;
+                if (r.reason_roll_marker_jamming) causes['Roll Marker Jamming']++;
+                if (r.reason_chain_breakage)      causes['Chain Breakage']++;
+                if (r.reason_machine_malfunction) causes['Machine Malfunction']++;
+                if (r.reason_other)               causes['Others']++;
+            });
+
+            const key = JSON.stringify(causes);
+            if (key !== cachedCausesData) { 
+                cachedCausesData = key; 
+                createDowntimeChartSmall(causes); 
+            }
+        } catch(err) { console.error(err); }
+    }
+
+    function createDowntimeChartSmall(causes) {
+        const ctx = document.getElementById('downtimeChartSmall');
+        if (downtimeChartSmall) {
+            downtimeChartSmall.data.datasets[0].data = Object.values(causes);
+            downtimeChartSmall.update('none');
+        } else {
+            downtimeChartSmall = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(causes),
+                    datasets: [{ 
+                        data: Object.values(causes), 
+                        backgroundColor: ['#2c5f6f','#f4e04d','#e85d4d','#9b59b6','#95a5a6'], 
+                        borderWidth:0 
+                    }]
+                },
+                options: {
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    animation: false,
+                    plugins: {
+                        legend: { 
+                            position:'right', 
+                            labels: { 
+                                padding:10, 
+                                font:{ size:13, family:"'Segoe UI',sans-serif", weight:'500' }, 
+                                boxWidth:15, 
+                                boxHeight:15 
+                            } 
+                        },
+                        tooltip: { 
+                            callbacks: { 
+                                label: ctx => ctx.label + ': ' + ctx.parsed 
+                            } 
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    // ══════════════════════════════════════
+    // ── TREND CHART ──
+    // ══════════════════════════════════════
+    async function loadTrendChart() {
+        try {
+            const today = new Date();
+            const from = new Date(today); 
+            from.setDate(from.getDate() - 13);
+            const fromStr = from.toISOString().slice(0,10);
+
+            const { data, error } = await supabaseClient
+                .from('downtime_records')
+                .select('date, duration_minutes, duration_seconds')
+                .gte('date', fromStr)
+                .not('downtime_end', 'is', null)
+                .order('date', { ascending: true });
+
+            if (error) throw error;
+
+            const dayMap = {};
+            for (let i = 0; i < 14; i++) {
+                const d = new Date(from); 
+                d.setDate(from.getDate() + i);
+                dayMap[d.toISOString().slice(0,10)] = 0;
+            }
+
+            (data||[]).forEach(r => {
+                const mins = r.duration_minutes || Math.round((r.duration_seconds||0)/60);
+                if (dayMap[r.date] !== undefined) dayMap[r.date] += mins;
+            });
+
+            const labels = Object.keys(dayMap).map(d => {
+                const dt = new Date(d + 'T00:00:00');
+                return dt.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+            });
+            const values = Object.values(dayMap);
+
+            const nonZero = values.filter(v => v > 0);
+            const maxVal = Math.max(...values);
+            const maxLabel = maxVal > 0 ? labels[values.indexOf(maxVal)] : '—';
+            const avgVal = nonZero.length > 0 ? (nonZero.reduce((a,b)=>a+b,0) / nonZero.length).toFixed(1) : 0;
+
+            const mid1 = values.slice(0,7).filter(v=>v>0), mid2 = values.slice(7).filter(v=>v>0);
+            const avg1 = mid1.length ? mid1.reduce((a,b)=>a+b,0)/mid1.length : 0;
+            const avg2 = mid2.length ? mid2.reduce((a,b)=>a+b,0)/mid2.length : 0;
+            let trendTxt = '→ Stable', trendCls = 'value';
+            if (avg2 < avg1 - 0.5) { trendTxt = '↓ Improving'; trendCls = 'value improving'; }
+            else if (avg2 > avg1 + 0.5) { trendTxt = '↑ Worsening'; trendCls = 'value worsening'; }
+
+            document.getElementById('insightHighest').textContent = maxVal > 0 ? `${maxVal} mins (${maxLabel})` : '—';
+            document.getElementById('insightAverage').textContent = avgVal > 0 ? `${avgVal} mins/day` : '—';
+            const insightTrendEl = document.getElementById('insightTrend');
+            insightTrendEl.textContent = trendTxt;
+            insightTrendEl.className = trendCls;
+
+            buildTrendChart(labels, values);
+
+        } catch(err) { console.error('Trend chart error:', err); }
+    }
+
+    function buildTrendChart(labels, data) {
+        const ctx = document.getElementById('trendChart');
+
+        if (trendChart) { trendChart.destroy(); trendChart = null; }
+
+        trendChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Downtime (mins)',
+                    data,
+                    backgroundColor: data.map(v => 
+                        v === 0 ? 'rgba(200,200,200,0.3)' : 
+                        v > 60 ? 'rgba(220,20,60,0.7)' : 
+                        v > 20 ? 'rgba(230,126,34,0.7)' : 
+                        'rgba(139,0,0,0.6)'),
+                    borderColor: data.map(v => 
+                        v === 0 ? 'rgba(200,200,200,0.5)' : 
+                        v > 60 ? '#DC143C' : 
+                        v > 20 ? '#e67e22' : 
+                        '#8B0000'),
+                    borderWidth: 1, 
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true, 
+                maintainAspectRatio: false, 
+                animation: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.parsed.y === 0 ? 'No downtime' : `${ctx.parsed.y} min${ctx.parsed.y !== 1 ? 's' : ''}`
+                        }
+                    }
+                },
+                scales: {
+                    x: { 
+                        grid: { display: true, color: '#e0e0e0' }, 
+                        ticks: { font: { size: 10 }, maxRotation: 45 } 
+                    },
+                    y: { 
+                        beginAtZero: true, 
+                        grid: { display: true, color: '#e0e0e0' }, 
+                        ticks: { font: { size: 10 } }, 
+                        title: { display: true, text: 'Minutes', font:{ size:11 }, color:'#888' } 
+                    }
+                }
+            }
+        });
+    }
+
+    // ══════════════════════════════════════
+    // ── INIT ──
+    // ══════════════════════════════════════
+    function hideLoadingScreen() {
+        setTimeout(() => document.getElementById('loadingScreen').classList.add('hidden'), 500);
+    }
+
+    function navigateWithLoading(url) {
+        const ls = document.getElementById('loadingScreen');
+        ls.classList.remove('hidden');
+        document.querySelector('.loading-text').textContent = 'Loading...';
+        document.querySelector('.loading-message').textContent = 'Please wait...';
+        setTimeout(() => window.location.href = url, 300);
+    }
+
+    window.addEventListener('load', async () => {
+        const userData = sessionStorage.getItem('currentUser');
+        if (!userData) { 
+            window.location.href = 'login.html'; 
+            return; 
+        }
+        currentUser = JSON.parse(userData);
+
+        updateDateTime();
+        setInterval(updateDateTime, 1000);
+
+        await loadDashboard();
+        hideLoadingScreen();
+        startAutoRefresh();
+
+        document.getElementById('logoutModal').addEventListener('click', function(e) {
+            if (e.target === this) closeLogoutModal();
+        });
+    });
+
+    function updateDateTime() {
+        const now = new Date();
+        document.getElementById('currentDate').textContent =
+            now.toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+    }
+
+    async function loadDashboard() {
+        await Promise.all([
+            loadTodayStats(),
+            loadRecentRecords(),
+            loadDowntimeCauses(),
+            loadMarkovProbabilities(),
+            loadTrendChart()
+        ]);
+    }
+
+    function startAutoRefresh() {
+        setInterval(() => loadDashboard(), 30000); // Refresh every 30 seconds
+    }
+
+    // ══════════════════════════════════════
+    // ── LOGOUT ──
+    // ══════════════════════════════════════
+    function logout() {
+        document.getElementById('logoutModal').classList.add('active');
+        document.getElementById('logoutUserName').textContent = currentUser.full_name || currentUser.username;
+        document.getElementById('logoutUserRole').textContent = currentUser.role ? 
+            currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1) : 'User';
+    }
+    
+    function closeLogoutModal() { 
+        document.getElementById('logoutModal').classList.remove('active'); 
+    }
+    
+    function confirmLogout() {
+        sessionStorage.removeItem('currentUser');
+        closeLogoutModal();
+        const ls = document.getElementById('loadingScreen');
+        ls.classList.remove('hidden');
+        document.querySelector('.loading-text').textContent = 'Logging Out...';
+        document.querySelector('.loading-message').textContent = 'See you next time!';
+        setTimeout(() => window.location.href = 'login.html', 800);
+    }
+
+    // ══════════════════════════════════════
+    // ── TOAST / MESSAGES ──
+    // ══════════════════════════════════════
+    function showMessage(text, type) {
+        const el = document.getElementById('message');
+        el.textContent = text; 
+        el.className = `message ${type}`; 
+        el.style.display = 'block';
+        setTimeout(() => el.style.display = 'none', 5000);
+    }
+</script>
+</body>
+</html>

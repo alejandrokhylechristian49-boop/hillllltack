@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hiltac - Machine Downtime Monitoring System</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Header Bar */
+        .header-bar {
+            background: linear-gradient(135deg, #8B0000 0%, #DC143C 100%);
+            padding: 20px 40px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            position: relative;
+            z-index: 10;
+        }
+
+        .header-logo {
+            width: 60px;
+            height: 60px;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 20px;
+        }
+
+        .header-logo img {
+            width: 70%;
+            height: 70%;
+            object-fit: contain;
+        }
+
+        .header-title {
+            color: white;
+            font-size: 28px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* Large Watermark Logo */
+        .watermark-logo {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 900px;
+            height: 900px;
+            opacity: 0.05;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .watermark-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* Circular Text Around Logo */
+        .watermark-text {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 1100px;
+            height: 1100px;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .watermark-text svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .watermark-text text {
+            fill: rgba(0, 0, 0, 0.03);
+            font-size: 48px;
+            font-weight: 700;
+            font-family: 'Segoe UI', sans-serif;
+            letter-spacing: 8px;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .login-container {
+            background: linear-gradient(135deg, rgba(139, 0, 0, 0.95) 0%, rgba(220, 20, 60, 0.95) 100%);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 420px;
+            padding: 50px 45px;
+            position: relative;
+            backdrop-filter: blur(10px);
+        }
+
+        .login-header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px 15px 0 0;
+            margin: -50px -45px 30px -45px;
+            text-align: center;
+        }
+
+        .login-title {
+            font-size: 32px;
+            font-weight: 700;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            font-size: 14px;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            border-left: 4px solid #c33;
+        }
+
+        .success {
+            background: #efe;
+            color: #2d7a3e;
+            border-left: 4px solid #27ae60;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            color: white;
+            font-weight: 700;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 22px;
+            z-index: 2;
+        }
+
+        input {
+            width: 100%;
+            padding: 16px 16px 16px 55px;
+            border: none;
+            border-radius: 25px;
+            font-size: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #333;
+            font-weight: 500;
+        }
+
+        input::placeholder {
+            color: #999;
+        }
+
+        input:focus {
+            outline: none;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+        }
+
+        /* Shake animation */
+        .input-wrapper.shake {
+            animation: shake 0.4s ease;
+        }
+
+        @keyframes shake {
+            0%,100% { transform: translateX(0); }
+            20%      { transform: translateX(-8px); }
+            40%      { transform: translateX(8px); }
+            60%      { transform: translateX(-5px); }
+            80%      { transform: translateX(5px); }
+        }
+
+        .forgot-password {
+            text-align: right;
+            margin-top: -15px;
+            margin-bottom: 25px;
+        }
+
+        .forgot-password a {
+            color: white;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .forgot-password a:hover {
+            text-decoration: underline;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #8B0000;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-login:hover {
+            background: #6B0000;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .btn-login:active {
+            transform: translateY(0);
+        }
+
+        .btn-login:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: white;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Success Popup Modal */
+        .success-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .success-modal.show {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .success-popup {
+            background: white;
+            border-radius: 20px;
+            padding: 50px 60px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            max-width: 450px;
+            width: 90%;
+            animation: slideUp 0.5s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .checkmark-container {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 30px;
+            position: relative;
+        }
+
+        .checkmark-circle {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: scaleIn 0.5s ease 0.2s both;
+            box-shadow: 0 10px 30px rgba(39, 174, 96, 0.4);
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+            to {
+                transform: scale(1);
+            }
+        }
+
+        .checkmark {
+            width: 60px;
+            height: 60px;
+            stroke: white;
+            stroke-width: 6;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .checkmark-path {
+            stroke-dasharray: 100;
+            stroke-dashoffset: 100;
+            animation: drawCheck 0.8s ease 0.6s forwards;
+        }
+
+        @keyframes drawCheck {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        .success-title {
+            font-size: 32px;
+            font-weight: 700;
+            color: #27ae60;
+            margin-bottom: 15px;
+        }
+
+        .success-message {
+            font-size: 16px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        /* ── NEW: Inactive Account Modal ── */
+        .inactive-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .inactive-modal.show {
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .inactive-popup {
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            max-width: 420px;
+            width: 90%;
+            animation: slideUp 0.4s ease;
+        }
+
+        .inactive-popup-header {
+            background: linear-gradient(135deg, #555 0%, #333 100%);
+            padding: 35px 30px;
+            text-align: center;
+        }
+
+        .inactive-icon {
+            font-size: 60px;
+            margin-bottom: 15px;
+        }
+
+        .inactive-popup-header h2 {
+            font-size: 24px;
+            color: white;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .inactive-popup-body {
+            padding: 30px;
+            text-align: center;
+        }
+
+        .inactive-popup-body p {
+            font-size: 15px;
+            color: #555;
+            line-height: 1.7;
+            margin-bottom: 10px;
+        }
+
+        .inactive-user-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #f5f5f5;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin: 10px 0;
+        }
+
+        .inactive-popup-footer {
+            padding: 0 30px 30px;
+        }
+
+        .btn-inactive-ok {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #555 0%, #333 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-inactive-ok:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            body {
+                overflow-y: auto;
+            }
+
+            .header-bar {
+                padding: 15px 20px;
+            }
+
+            .header-logo {
+                width: 50px;
+                height: 50px;
+                margin-right: 12px;
+            }
+
+            .header-title {
+                font-size: 14px;
+                letter-spacing: 1px;
+            }
+
+            .watermark-logo {
+                width: 500px;
+                height: 500px;
+            }
+
+            .watermark-text {
+                width: 700px;
+                height: 700px;
+            }
+
+            .watermark-text text {
+                font-size: 28px;
+                letter-spacing: 4px;
+            }
+
+            .main-content {
+                padding: 30px 15px;
+            }
+
+            .login-container {
+                padding: 40px 25px;
+                max-width: 100%;
+            }
+
+            .login-header {
+                margin: -40px -25px 25px -25px;
+                padding: 18px;
+            }
+
+            .login-title {
+                font-size: 26px;
+                letter-spacing: 1.5px;
+            }
+
+            .form-group {
+                margin-bottom: 20px;
+            }
+
+            label {
+                font-size: 13px;
+                margin-bottom: 8px;
+            }
+
+            input {
+                padding: 14px 14px 14px 50px;
+                font-size: 14px;
+            }
+
+            .input-icon {
+                left: 16px;
+                font-size: 20px;
+            }
+
+            .btn-login {
+                padding: 14px;
+                font-size: 16px;
+            }
+
+            .forgot-password {
+                margin-top: -10px;
+                margin-bottom: 20px;
+            }
+
+            .success-popup {
+                padding: 40px 30px;
+            }
+
+            .checkmark-container {
+                width: 100px;
+                height: 100px;
+                margin-bottom: 25px;
+            }
+
+            .checkmark-circle {
+                width: 100px;
+                height: 100px;
+            }
+
+            .checkmark {
+                width: 50px;
+                height: 50px;
+            }
+
+            .success-title {
+                font-size: 28px;
+            }
+
+            .success-message {
+                font-size: 15px;
+            }
+
+            .inactive-popup-header {
+                padding: 25px 20px;
+            }
+
+            .inactive-icon {
+                font-size: 48px;
+            }
+
+            .inactive-popup-header h2 {
+                font-size: 20px;
+            }
+
+            .inactive-popup-body {
+                padding: 25px 20px;
+            }
+
+            .inactive-popup-footer {
+                padding: 0 20px 25px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header-bar {
+                padding: 12px 15px;
+            }
+
+            .header-logo {
+                width: 40px;
+                height: 40px;
+                margin-right: 10px;
+            }
+
+            .header-title {
+                font-size: 11px;
+                letter-spacing: 0.5px;
+            }
+
+            .watermark-logo {
+                width: 350px;
+                height: 350px;
+            }
+
+            .watermark-text {
+                width: 500px;
+                height: 500px;
+            }
+
+            .watermark-text text {
+                font-size: 20px;
+                letter-spacing: 3px;
+            }
+
+            .main-content {
+                padding: 20px 10px;
+            }
+
+            .login-container {
+                padding: 35px 20px;
+            }
+
+            .login-header {
+                margin: -35px -20px 20px -20px;
+                padding: 15px;
+            }
+
+            .login-title {
+                font-size: 22px;
+            }
+
+            input {
+                padding: 13px 13px 13px 45px;
+                font-size: 13px;
+            }
+
+            .input-icon {
+                left: 14px;
+                font-size: 18px;
+            }
+
+            .btn-login {
+                padding: 13px;
+                font-size: 15px;
+                letter-spacing: 1.5px;
+            }
+
+            .success-popup {
+                padding: 35px 25px;
+            }
+
+            .checkmark-container {
+                width: 90px;
+                height: 90px;
+                margin-bottom: 20px;
+            }
+
+            .checkmark-circle {
+                width: 90px;
+                height: 90px;
+            }
+
+            .checkmark {
+                width: 45px;
+                height: 45px;
+            }
+
+            .success-title {
+                font-size: 24px;
+            }
+
+            .success-message {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header Bar -->
+    <div class="header-bar">
+        <div class="header-logo">
+            <img src="hiltac_logo.png" alt="Hiltac Logo">
+        </div>
+        <div class="header-title">Hiltac Manufacturing and Trading, Inc.</div>
+    </div>
+
+    <!-- Large Watermark Logo -->
+    <div class="watermark-logo">
+        <img src="hiltac_logo.png" alt="Watermark">
+    </div>
+
+    <!-- Circular Text Around Logo -->
+    <div class="watermark-text">
+        <svg viewBox="0 0 500 500">
+            <path id="curve" d="M 250, 250 m -200, 0 a 200,200 0 1,1 400,0 a 200,200 0 1,1 -400,0" fill="transparent"/>
+            <text width="500">
+                <textPath href="#curve">
+                    HILTAC MANUFACTURING &amp; TRADING INC
+                </textPath>
+            </text>
+        </svg>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="login-container">
+            <div class="login-header">
+                <div class="login-title">LOGIN PAGE</div>
+            </div>
+            
+            <div id="message" class="message"></div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <div class="input-wrapper" id="usernameWrapper">
+                        <span class="input-icon">👤</span>
+                        <input type="text" id="username" required autocomplete="username" placeholder="Enter your username">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-wrapper" id="passwordWrapper">
+                        <span class="input-icon">🔒</span>
+                        <input type="password" id="password" required autocomplete="current-password" placeholder="Enter your password">
+                    </div>
+                </div>
+
+                <div class="forgot-password">
+                    <a href="#" onclick="alert('Please contact your administrator'); return false;">Forgot Password?</a>
+                </div>
+                
+                <button type="submit" class="btn-login" id="loginBtn">Login</button>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Logging in...</p>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div class="success-modal" id="successModal">
+        <div class="success-popup">
+            <div class="checkmark-container">
+                <div class="checkmark-circle">
+                    <svg class="checkmark" viewBox="0 0 52 52">
+                        <path class="checkmark-path" d="M14 27l7 7 16-16"/>
+                    </svg>
+                </div>
+            </div>
+            <h2 class="success-title">Login Successful!</h2>
+            <p class="success-message">Welcome back! Redirecting you to the dashboard...</p>
+        </div>
+    </div>
+
+    <!-- Inactive Account Modal -->
+    <div class="inactive-modal" id="inactiveModal">
+        <div class="inactive-popup">
+            <div class="inactive-popup-header">
+                <div class="inactive-icon">🚫</div>
+                <h2>Account Disabled</h2>
+            </div>
+            <div class="inactive-popup-body">
+                <p>Your account has been <strong>deactivated</strong> and you are unable to log in.</p>
+                <div class="inactive-user-badge">
+                    <span>👤</span>
+                    <span id="inactiveUsername">—</span>
+                </div>
+                <p style="font-size:13px; color:#888;">Please contact your administrator to reactivate your account.</p>
+            </div>
+            <div class="inactive-popup-footer">
+                <button class="btn-inactive-ok" onclick="closeInactiveModal()">OK, I Understand</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    window.addEventListener('load', () => {
+        if (sessionStorage.getItem('currentUser')) {
+            window.location.href = 'dashboard.html';
+        }
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loginBtn').disabled = true;
+        hideMessage();
+
+        try {
+            // ✅ No URL, no key visible here at all
+            const response = await fetch('/.netlify/functions/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            const result = await response.json();
+
+            if (response.status === 403 && result.error === 'inactive') {
+                shakeInputs();
+                document.getElementById('inactiveUsername').textContent = result.full_name || username;
+                document.getElementById('inactiveModal').classList.add('show');
+                return;
+            }
+
+            if (!response.ok) {
+                shakeInputs();
+                showMessage(result.error || 'Invalid username or password', 'error');
+                return;
+            }
+
+            sessionStorage.setItem('currentUser', JSON.stringify(result.user));
+            document.getElementById('loading').style.display = 'none';
+            showSuccessModal();
+
+            setTimeout(() => {
+                window.location.href = 'dashboard.html';
+            }, 2500);
+
+        } catch (err) {
+            showMessage('Connection error. Please try again.', 'error');
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('loginBtn').disabled = false;
+        }
+    });
+
+    function shakeInputs() {
+        const uw = document.getElementById('usernameWrapper');
+        const pw = document.getElementById('passwordWrapper');
+        uw.classList.add('shake');
+        pw.classList.add('shake');
+        setTimeout(() => {
+            uw.classList.remove('shake');
+            pw.classList.remove('shake');
+        }, 500);
+    }
+
+    function showSuccessModal() {
+        document.getElementById('successModal').classList.add('show');
+    }
+
+    function showMessage(msg, type) {
+        const el = document.getElementById('message');
+        el.textContent = msg;
+        el.className = 'message ' + type;
+        el.style.display = 'block';
+        if (type === 'error') setTimeout(() => el.style.display = 'none', 5000);
+    }
+
+    function hideMessage() {
+        document.getElementById('message').style.display = 'none';
+    }
+
+    function closeInactiveModal() {
+        document.getElementById('inactiveModal').classList.remove('show');
+        document.getElementById('password').value = '';
+    }
+
+    document.getElementById('inactiveModal').addEventListener('click', function(e) {
+        if (e.target === this) closeInactiveModal();
+    });
+</script>
+</body>
+</html>
